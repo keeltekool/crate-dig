@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { rolls } from "@/lib/db/schema";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 
 // GET — Load roll history
 export async function GET(request: NextRequest) {
@@ -38,4 +38,15 @@ export async function POST(request: NextRequest) {
     .returning();
 
   return NextResponse.json({ roll: row });
+}
+
+// DELETE — Remove a roll
+export async function DELETE(request: NextRequest) {
+  const id = request.nextUrl.searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  }
+
+  await db.delete(rolls).where(eq(rolls.id, id));
+  return NextResponse.json({ deleted: true });
 }
