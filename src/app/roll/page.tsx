@@ -132,21 +132,28 @@ export default function RollPage() {
       const data = await res.json();
       setPlaylistUrl(data.url);
 
-      // Save roll to history
-      await fetch("/api/rolls", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          diceMode: mode,
-          outputSize: tracks.length,
-          seedsUsed: rollStats.seedsUsed,
-          seedsFailed: rollStats.seedsFailed,
-          tracksFound: rollStats.rawFound,
-          playlistId: data.playlist_id,
-          playlistUrl: data.url,
-          thumbnailUrl: tracks[0]?.thumbnail || null,
-        }),
-      });
+      // Save roll to history (non-blocking — playlist is already created)
+      try {
+        const historyRes = await fetch("/api/rolls", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            diceMode: mode,
+            outputSize: tracks.length,
+            seedsUsed: rollStats.seedsUsed,
+            seedsFailed: rollStats.seedsFailed,
+            tracksFound: rollStats.rawFound,
+            playlistId: data.playlist_id,
+            playlistUrl: data.url,
+            thumbnailUrl: tracks[0]?.thumbnail || null,
+          }),
+        });
+        if (!historyRes.ok) {
+          console.error("History save failed:", historyRes.status, await historyRes.text());
+        }
+      } catch (historyErr) {
+        console.error("History save error:", historyErr);
+      }
 
       setState("pushed");
     } catch (err) {
