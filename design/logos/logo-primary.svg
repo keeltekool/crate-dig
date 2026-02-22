@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="240" height="44" viewBox="0 0 240 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Vinyl record icon -->
+  <circle cx="22" cy="22" r="18" fill="#111" stroke="#333" stroke-width="1.5"/>
+  <circle cx="22" cy="22" r="12" stroke="#222" stroke-width="0.5" fill="none"/>
+  <circle cx="22" cy="22" r="8" stroke="#222" stroke-width="0.5" fill="none"/>
+  <circle cx="22" cy="22" r="4" fill="#F97316"/>
+  <!-- Wordmark -->
+  <text x="48" y="30" font-family="'Bebas Neue', sans-serif" font-size="30" letter-spacing="3">
+    <tspan fill="#FFFFFF">CRATE</tspan><tspan fill="#F97316">DIG</tspan>
+  </text>
+</svg>
