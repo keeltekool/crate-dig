@@ -8,9 +8,11 @@
 
 ## Solution
 
-Web app with user accounts: upload music library as CSV (stored per user), roll randomized dice to pick seed songs, YouTube Music's recommendation engine finds related tracks, pushes them as a playlist directly to your YouTube account.
+Personal web app: upload music library as CSV, roll randomized dice to pick seed songs, YouTube Music's recommendation engine finds related tracks, pushes them as a playlist directly to your YouTube account.
 
-No AI analysis. No paid subscription. Just randomness + YouTube's algorithm seeded with YOUR songs.
+No AI analysis. No paid subscription. No multi-user auth. Just randomness + YouTube's algorithm seeded with YOUR songs.
+
+**Single-user app.** Google OAuth for YouTube connection IS the login. No Clerk, no separate auth system.
 
 ---
 
@@ -21,12 +23,12 @@ No AI analysis. No paid subscription. Just randomness + YouTube's algorithm seed
 │   Next.js 16 Frontend    │ ◄──────────────── │   FastAPI Backend        │
 │   Vercel (port 3005)     │ ────────────────► │   Render (port 8000)     │
 │                          │                    │                          │
-│ - Clerk auth             │                    │ - ytmusicapi calls       │
+│ - Google OAuth (login)   │                    │ - ytmusicapi calls       │
 │ - CSV upload + parsing   │                    │ - YouTube search/related │
-│ - Library stored in Neon │                    │ - Playlist creation      │
-│ - Dice mode UI           │                    │ - Reads YouTube OAuth    │
-│ - Preview list           │                    │   tokens from Neon       │
-│ - Roll history           │                    │                          │
+│ - Library stored in Neon │                    │ - Playlist creation via  │
+│ - Dice mode UI           │                    │   YouTube Data API v3    │
+│ - Preview list           │                    │ - Reads YouTube OAuth    │
+│ - Roll history           │                    │   tokens from Neon       │
 └────────────┬─────────────┘                    └────────────┬─────────────┘
              │                                               │
              ▼                                               │
@@ -34,7 +36,7 @@ No AI analysis. No paid subscription. Just randomness + YouTube's algorithm seed
 │   Neon PostgreSQL        │ ◄───────────────────────────────┘
 │   (shared database)      │
 │                          │
-│ - libraries (user CSV)   │
+│ - libraries (CSV songs)  │
 │ - youtube_connections    │
 │ - rolls (history)        │
 └──────────────────────────┘
@@ -42,7 +44,7 @@ No AI analysis. No paid subscription. Just randomness + YouTube's algorithm seed
 
 **Why two services:** `ytmusicapi` is Python-only. No JS/TS equivalent exists. Frontend stays Next.js (matches existing stack — Lead Radar, QuoteKit, etc.). Backend is FastAPI on Render (same pattern as HankeRadar). Both services connect to the same Neon database.
 
-**Auth flow between services:** Frontend authenticates users via Clerk. When calling FastAPI backend, frontend passes the Clerk user ID in request headers. Backend verifies and uses it to load the user's YouTube OAuth token from Neon. No Clerk SDK on the backend — just a trusted user ID passed from the authenticated frontend.
+**Auth: Google OAuth = everything.** Single-user app. Connecting YouTube IS the login. Google OAuth provides both YouTube API access AND user identity. No Clerk, no separate auth system. A simple HTTP-only session cookie tracks the logged-in state. Backend trusts requests from the frontend (single-user, no user ID passing needed).
 
 ---
 
@@ -56,7 +58,6 @@ No AI analysis. No paid subscription. Just randomness + YouTube's algorithm seed
 | react / react-dom | 19.x | UI |
 | tailwindcss | 4.x | Styling |
 | typescript | 5.x | Type safety |
-| @clerk/nextjs | latest | Auth (Google + email signup/login) |
 | drizzle-orm | latest | DB queries |
 | @neondatabase/serverless | latest | Neon PostgreSQL driver |
 | papaparse | 5.x | CSV parsing in browser |
@@ -82,28 +83,28 @@ Python version: **3.13** (matches HankeRadar)
 | **Vercel** | egertv1s (existing) | Frontend hosting | Free (Hobby) |
 | **Render** | egertv@gmail.com (existing) | FastAPI backend | Free (750 hrs/month) |
 | **GitHub** | keeltekool (existing) | Source code | Free |
-| **Clerk** | egertv@gmail.com (existing) | User auth | Free (10k MAU) |
 | **Neon** | egertv@gmail.com (existing) | PostgreSQL database | Free (0.5GB) |
-| **Google Cloud** | egertv@gmail.com (existing) | YouTube OAuth credentials | Free |
+| **Google Cloud** | egertv@gmail.com (existing) | YouTube OAuth + API | Free |
 
-**New accounts required: ZERO.** New Neon project within existing account. New Clerk app within existing account. Reuse existing GCP project.
+**New accounts required: ZERO.** New Neon project within existing account. Reuse existing GCP project.
 
 ### Env Vars
 
 **Vercel (frontend):**
 | Var | Value |
 |-----|-------|
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | From Clerk dashboard (new CrateDig app) |
-| `CLERK_SECRET_KEY` | From Clerk dashboard |
 | `DATABASE_URL` | Neon connection string (new `crate-dig` project) |
+| `GOOGLE_CLIENT_ID` | From GCP OAuth credentials |
+| `GOOGLE_CLIENT_SECRET` | From GCP OAuth credentials |
+| `SESSION_SECRET` | Random 32-char string for cookie signing |
 | `NEXT_PUBLIC_API_URL` | `https://crate-dig-api.onrender.com` |
 
 **Render (backend):**
 | Var | Value |
 |-----|-------|
 | `DATABASE_URL` | Same Neon connection string |
-| `GOOGLE_CLIENT_ID` | From GCP OAuth credentials |
-| `GOOGLE_CLIENT_SECRET` | From GCP OAuth credentials |
+| `GOOGLE_CLIENT_ID` | Same GCP OAuth credentials |
+| `GOOGLE_CLIENT_SECRET` | Same GCP OAuth credentials |
 | `FRONTEND_URL` | `https://crate-dig.vercel.app` (CORS + redirect) |
 
 ---
@@ -112,11 +113,10 @@ Python version: **3.13** (matches HankeRadar)
 
 3 tables. No bloat.
 
-### `libraries` — User's uploaded song collection
+### `libraries` — Uploaded song collection
 ```sql
 CREATE TABLE libraries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  clerk_user_id TEXT UNIQUE NOT NULL,     -- one library per user
   filename TEXT NOT NULL,                  -- original CSV filename
   songs JSONB NOT NULL,                    -- array of {artist, title, genre?}
   song_count INTEGER NOT NULL,
@@ -126,28 +126,29 @@ CREATE TABLE libraries (
 );
 ```
 
-**Why JSONB instead of a `library_songs` table:** 10k songs × artist + title ≈ 1-2MB of JSON. Single row, no joins, fast read. Neon handles this fine. If we ever need per-song queries we can split later — YAGNI for now.
+**Single-user = one row.** On re-upload, the existing row is replaced (UPSERT).
+
+**Why JSONB instead of a `library_songs` table:** 10k songs × artist + title ≈ 1-2MB of JSON. Single row, no joins, fast read. Neon handles this fine.
 
 **Stored fields:** MVP uses only `artist` + `title`. But CSV may contain `genre` — store it as an optional field in the same JSONB objects for M3 GENRE dice mode. No extra cost to store, big cost to re-upload later.
 
-### `youtube_connections` — Per-user YouTube OAuth tokens
+### `youtube_connections` — YouTube OAuth tokens
 ```sql
 CREATE TABLE youtube_connections (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  clerk_user_id TEXT UNIQUE NOT NULL,     -- one YouTube account per user
-  oauth_token JSONB NOT NULL,             -- {access_token, refresh_token, token_type, expires_at}
+  google_email TEXT,                       -- for display ("Connected as egertv@gmail.com")
+  oauth_token JSONB NOT NULL,             -- {access_token, refresh_token, token_type, expires_at, client_id, client_secret}
   connected_at TIMESTAMP DEFAULT NOW(),
   last_used_at TIMESTAMP DEFAULT NOW()
 );
 ```
 
-**Read by FastAPI backend** when making ytmusicapi calls. Backend loads the token, constructs a YTMusic instance, makes the API calls.
+**Single row.** Read by FastAPI backend when making ytmusicapi calls + YouTube Data API v3 calls.
 
 ### `rolls` — Roll history
 ```sql
 CREATE TABLE rolls (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  clerk_user_id TEXT NOT NULL,
   dice_mode TEXT NOT NULL,                 -- 'random' | 'deep'
   output_size INTEGER NOT NULL,
   seeds_used INTEGER NOT NULL,
@@ -160,29 +161,31 @@ CREATE TABLE rolls (
 );
 ```
 
-Roll history is purely for the user's reference — see what they rolled before and revisit playlist links.
+Roll history — see past rolls, revisit playlist links.
 
 ---
 
 ## YouTube Music Integration — Technical Detail
 
-### YouTube OAuth Flow (per-user)
+### YouTube OAuth Flow (= login + YouTube connection)
 
 ```
-1. User clicks "Connect YouTube" in app (must be logged in via Clerk first)
-2. Frontend calls Next.js API route: POST /api/youtube/auth-start
-3. API route generates Google OAuth URL with:
+1. User clicks "Connect YouTube" (or lands on app for first time)
+2. Frontend redirects to Google OAuth URL with:
    - client_id from env
    - redirect_uri = https://crate-dig.vercel.app/api/youtube/callback
-   - scope = https://www.googleapis.com/auth/youtube
-   - state = clerk_user_id (encrypted)
-4. Frontend redirects user to Google consent screen
-5. User grants permission
-6. Google redirects to /api/youtube/callback with auth code
-7. API route exchanges code for tokens (access_token + refresh_token)
-8. Tokens stored in youtube_connections table tied to clerk_user_id
-9. User redirected back to app — "YouTube Connected ✓"
+   - scope = https://www.googleapis.com/auth/youtube + email
+   - access_type = offline (for refresh token)
+   - prompt = consent
+3. User signs in with Google + grants YouTube permission
+4. Google redirects to /api/youtube/callback with auth code
+5. API route exchanges code for tokens (access_token + refresh_token)
+6. Tokens stored in youtube_connections table
+7. HTTP-only session cookie set (signed with SESSION_SECRET)
+8. User redirected to /roll — "YouTube Connected ✓"
 ```
+
+**This is the ONLY auth flow.** Connecting YouTube = logging in. No separate sign-up/sign-in.
 
 **Token lifecycle:** Access tokens expire after 1 hour. Refresh tokens are long-lived. ytmusicapi handles auto-refresh. Backend updates the stored token in DB after each refresh.
 
@@ -259,19 +262,18 @@ async def process_seeds(seeds: list, yt: YTMusic):
 ## FastAPI Backend — Endpoints
 
 ```
-POST /roll                → Receives seeds + clerk_user_id, returns discovered tracks
-POST /create-playlist     → Receives videoIds + title + clerk_user_id, creates YouTube playlist
+POST /roll                → Receives seeds, returns discovered tracks
+POST /create-playlist     → Receives videoIds + title, creates YouTube playlist
 GET  /health              → Health check for Render
 ```
 
-YouTube OAuth is handled by Next.js API routes (frontend), NOT FastAPI. Backend only reads tokens from DB.
+YouTube OAuth is handled by Next.js API routes (frontend), NOT FastAPI. Backend only reads tokens from DB. Single-user = no user ID needed in requests.
 
 ### POST /roll — Request/Response
 
 ```json
 // Request
 {
-  "clerk_user_id": "user_2abc...",
   "seeds": [
     {"artist": "Daft Punk", "title": "Around The World"},
     {"artist": "Boards of Canada", "title": "Roygbiv"}
@@ -299,7 +301,6 @@ YouTube OAuth is handled by Next.js API routes (frontend), NOT FastAPI. Backend 
 ```json
 // Request
 {
-  "clerk_user_id": "user_2abc...",
   "title": "CrateDig Roll - Feb 22 2026",
   "video_ids": ["abc123", "def456"]
 }
@@ -307,7 +308,7 @@ YouTube OAuth is handled by Next.js API routes (frontend), NOT FastAPI. Backend 
 // Response
 {
   "playlist_id": "PLxxxxxxx",
-  "url": "https://www.youtube.com/playlist?list=PLxxxxxxx",
+  "url": "https://music.youtube.com/playlist?list=PLxxxxxxx",
   "track_count": 50
 }
 ```
@@ -385,12 +386,11 @@ Full design specs in `design/STYLE-GUIDE.md`. Key structural decisions below.
 
 | Route | Auth | Purpose |
 |-------|------|---------|
-| `/` | No | Landing page — large vinyl, tagline, sign in CTA |
-| `/sign-in` | No | Clerk sign-in |
-| `/sign-up` | No | Clerk sign-up |
+| `/` | No | Landing page — large vinyl, tagline, "Connect YouTube" CTA |
 | `/roll` | Yes | **Main page** — dice mode, slider, roll, preview, push |
 | `/library` | Yes | CSV upload, browse library, search, replace CSV |
 | `/history` | Yes | Past rolls with thumbnails + YouTube playlist links |
+| `/api/youtube/callback` | No | OAuth callback (exchanges code for tokens, sets session) |
 
 ### Roll Page (`/roll`) — Main Flow
 - Spinning vinyl hero (120px, always spinning)
@@ -420,9 +420,12 @@ Full design specs in `design/STYLE-GUIDE.md`. Key structural decisions below.
 ## Core Flow — Complete Technical Path
 
 ```
-1. User signs up / logs in via Clerk
+1. User lands on app → clicks "Connect YouTube"
+   → Google OAuth flow → tokens stored in youtube_connections table
+   → Session cookie set → redirected to /roll
+   → "YouTube Connected ✓"
 
-2. First visit: uploads CSV
+2. First visit: uploads CSV on /library page
    → PapaParse parses in browser
    → POST /api/library with parsed songs array
    → Stored in Neon: libraries table (songs as JSONB)
@@ -433,29 +436,25 @@ Full design specs in `design/STYLE-GUIDE.md`. Key structural decisions below.
    → Returns songs array from JSONB
    → No re-upload needed
 
-4. User connects YouTube (one-time)
-   → OAuth flow via GCP → tokens stored in youtube_connections table
-   → "YouTube Connected ✓"
-
-5. User picks dice mode + output count (e.g. 50 songs)
+4. User picks dice mode + output count (e.g. 50 songs)
    → Client runs dice algorithm on loaded library
    → Selects 8 seeds
 
-6. User clicks "Roll"
-   → POST {FASTAPI_URL}/roll with seeds + clerk_user_id
-   → Backend loads YouTube token from DB for this user
-   → For each seed: yt.search() → yt.get_song_related()
+5. User clicks "Roll"
+   → POST {FASTAPI_URL}/roll with seeds array
+   → Backend loads YouTube token from DB
+   → For each seed: yt.search() → yt.get_watch_playlist(radio=True)
    → Backend deduplicates by videoId
    → Returns raw tracks to frontend
    → Frontend filters against user's library (artist+title match)
-   → Trims to exactly 50
+   → Trims to desired count
    → Shows preview
 
-7. User reviews, removes unwanted tracks
+6. User reviews, removes unwanted tracks
 
-8. User clicks "Create Playlist"
-   → POST {FASTAPI_URL}/create-playlist with videoIds + title + clerk_user_id
-   → Backend loads YouTube token, calls yt.create_playlist()
+7. User clicks "Create Playlist"
+   → POST {FASTAPI_URL}/create-playlist with videoIds + title
+   → Backend loads YouTube token, calls YouTube Data API v3
    → Returns playlist URL
    → Frontend saves roll to Neon (rolls table)
    → UI shows YouTube link
@@ -476,7 +475,7 @@ Full design specs in `design/STYLE-GUIDE.md`. Key structural decisions below.
 | YouTube token expired | ytmusicapi auth error | Auto-refresh, update in DB. Re-prompt if refresh fails |
 | All seeds fail | 0 valid videoIds | Error: "No seeds found on YouTube. Try rolling again." |
 | Library too large | CSV > 50k songs | Warn user, still process (JSONB handles it) |
-| User not connected to YouTube | No youtube_connections row | Gray out Roll button, show "Connect YouTube first" |
+| User not connected to YouTube | No session cookie / no youtube_connections row | Redirect to landing, show "Connect YouTube" CTA |
 
 ---
 
@@ -496,24 +495,26 @@ Deliverable: Single Python script (`poc.py`), no UI, no accounts.
 - yt.create_playlist() → verify playlist appears on YouTube
 ```
 
-**M1 answers:**
-1. Does `get_song_related()` return tracks with usable videoIds?
-2. Does `create_playlist()` work on a free Google account?
-3. Actual yield per seed (expected 10-30)
-4. Practical rate limits (expected 1-2s delay sufficient)
-5. OAuth setup mechanics (browser cookie vs OAuth)
+**M1 answers (VALIDATED 2026-02-22):**
+1. `get_watch_playlist(radio=True)` returns ~49 tracks per seed with usable videoIds — YES
+2. Playlist creation works on free Google account — YES (via YouTube Data API v3, NOT ytmusicapi)
+3. Yield per seed: ~49 tracks (way above expected 10-30)
+4. Rate limits: none encountered at 1.5s delay
+5. Search hit rate: 5/5 (100%) on DJ/electronic library
+6. OAuth: Web Application type + local redirect server. TV device type works for reads but NOT writes
+
+**M1 key finding:** ytmusicapi handles search + related tracks (internal API). Playlist creation must use YouTube Data API v3 (official REST API) — ytmusicapi's create_playlist() returns 401 with Web App OAuth tokens. This means the backend needs BOTH: ytmusicapi for discovery, requests-based YouTube Data API v3 for playlist CRUD.
 
 ### M2: Full App
-- Clerk auth (sign up / login)
+- Google OAuth (login + YouTube connection in one flow)
 - Neon database (3 tables: libraries, youtube_connections, rolls)
 - Drizzle ORM + migrations
 - CSV upload → parse → store in DB
 - Library persistence (upload once, use forever)
-- YouTube OAuth connection per user
 - 2 dice modes (RANDOM, DEEP)
 - Output size slider (10-100)
 - Preview with remove
-- Create playlist on YouTube
+- Create playlist on YouTube (via YouTube Data API v3)
 - Roll history page
 - Next.js on Vercel + FastAPI on Render
 - GitHub repo: `keeltekool/crate-dig`
@@ -552,7 +553,7 @@ Reuse existing GCP project (egertv@gmail.com):
 - Create OAuth 2.0 Web Application credentials
 - Redirect URI: `https://crate-dig.vercel.app/api/youtube/callback`
 
-**New accounts: ZERO. New Clerk app + new Neon project within existing accounts.**
+**New accounts: ZERO. New Neon project within existing account. Reuse existing GCP project.**
 
 ---
 
