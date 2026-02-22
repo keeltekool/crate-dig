@@ -1,0 +1,96 @@
+@import "tailwindcss";
+@import "@fontsource/bebas-neue";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+
+@theme inline {
+  --color-background: #0A0A0A;
+  --color-foreground: #E5E5E5;
+  --color-orange-500: #F97316;
+  --color-orange-600: #EA580C;
+  --color-orange-400: #FB923C;
+  --color-vinyl-bg: #0A0A0A;
+  --color-vinyl-card: #111111;
+  --color-vinyl-border: #222222;
+  --color-vinyl-groove: #333333;
+  --color-success: #22C55E;
+  --color-warning: #EAB308;
+  --color-error: #EF4444;
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-mono);
+}
+
+/* Vinyl record spinning animation */
+@keyframes vinyl-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-vinyl-spin {
+  animation: vinyl-spin 8s linear infinite;
+}
+
+.animate-vinyl-fast {
+  animation: vinyl-spin 2s linear infinite;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0A0A;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Range slider styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  width: 100%;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #333;
+  border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  background: #F97316;
+  border-radius: 50%;
+  margin-top: -8px;
+  border: 2px solid #0A0A0A;
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: #333;
+  border-radius: 2px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: #F97316;
+  border-radius: 50%;
+  border: 2px solid #0A0A0A;
+}
