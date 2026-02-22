@@ -47,9 +47,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="CrateDig API", lifespan=lifespan)
 
 origins = [FRONTEND_URL, "http://localhost:3005"]
-# Also allow the Vercel production URL pattern
-if FRONTEND_URL and "vercel.app" not in FRONTEND_URL:
-    origins.append("https://crate-dig.vercel.app")
+# Also allow the Vercel production URLs
+for prod_url in ["https://crate-dig.vercel.app", "https://crate-dig-two.vercel.app"]:
+    if prod_url not in origins:
+        origins.append(prod_url)
 
 app.add_middleware(
     CORSMiddleware,
