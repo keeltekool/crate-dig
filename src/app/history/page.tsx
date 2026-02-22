@@ -24,7 +24,6 @@ const MODE_EMOJI: Record<string, string> = {
 export default function HistoryPage() {
   const [rolls, setRolls] = useState<Roll[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deletedPlaylists, setDeletedPlaylists] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,14 +45,22 @@ export default function HistoryPage() {
             if (checkRes.ok) {
               const checkData = await checkRes.json();
               const existingSet = new Set<string>(checkData.existing);
-              const deleted = new Set<string>();
-              for (const id of playlistIds) {
-                if (!existingSet.has(id)) deleted.add(id);
+              // Find rolls whose playlists were deleted on YouTube
+              const deletedRolls = loadedRolls.filter(
+                (r) => r.playlistId && !existingSet.has(r.playlistId)
+              );
+              if (deletedRolls.length > 0) {
+                // Auto-delete from DB and remove from UI
+                const deletePromises = deletedRolls.map((r) =>
+                  fetch(`/api/rolls?id=${r.id}`, { method: "DELETE" }).catch(() => {})
+                );
+                await Promise.all(deletePromises);
+                const deletedIds = new Set(deletedRolls.map((r) => r.id));
+                setRolls((prev) => prev.filter((r) => !deletedIds.has(r.id)));
               }
-              if (deleted.size > 0) setDeletedPlaylists(deleted);
             }
           } catch {
-            // Silently fail — don't show false deleted badges
+            // Silently fail — don't delete on API errors
           }
         }
       })
@@ -97,17 +104,14 @@ export default function HistoryPage() {
 
         {rolls.length > 0 && (
           <div className="border border-vinyl-border divide-y divide-vinyl-border">
-            {rolls.map((roll) => {
-              const isDeleted = roll.playlistId ? deletedPlaylists.has(roll.playlistId) : false;
-
-              return (
+            {rolls.map((roll) => (
                 <div key={roll.id} className="flex items-center gap-3 px-3 py-3 group">
                   {/* Thumbnail */}
                   {roll.thumbnailUrl ? (
                     <img
                       src={roll.thumbnailUrl}
                       alt=""
-                      className={`w-10 h-10 object-cover flex-shrink-0 ${isDeleted ? "opacity-40 grayscale" : ""}`}
+                      className="w-10 h-10 object-cover flex-shrink-0"
                     />
                   ) : (
                     <div className="w-10 h-10 bg-vinyl-card flex-shrink-0" />
@@ -117,14 +121,9 @@ export default function HistoryPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-lg">{MODE_EMOJI[roll.diceMode] || "🎲"}</span>
-                      <span className={`text-sm font-mono ${isDeleted ? "text-neutral-500" : "text-neutral-300"}`}>
+                      <span className="text-sm font-mono text-neutral-300">
                         {roll.outputSize} tracks
                       </span>
-                      {isDeleted && (
-                        <span className="text-[9px] font-mono text-red-400/70 border border-red-400/30 px-1 py-0.5 leading-none">
-                          DELETED
-                        </span>
-                      )}
                     </div>
                     <p className="text-neutral-600 text-[10px] font-mono">
                       {new Date(roll.rolledAt).toLocaleDateString("en-US", {
@@ -141,7 +140,7 @@ export default function HistoryPage() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {roll.playlistUrl && !isDeleted ? (
+                    {roll.playlistUrl ? (
                       <a
                         href={roll.playlistUrl}
                         target="_blank"
@@ -150,8 +149,6 @@ export default function HistoryPage() {
                       >
                         YT →
                       </a>
-                    ) : roll.playlistUrl && isDeleted ? (
-                      <span className="text-neutral-700 text-[10px] font-mono line-through">YT</span>
                     ) : (
                       <span className="text-neutral-700 text-[10px] font-mono">no playlist</span>
                     )}
@@ -166,8 +163,7 @@ export default function HistoryPage() {
                     </button>
                   </div>
                 </div>
-              );
-            })}
+              ))}
           </div>
         )}
       </main>
