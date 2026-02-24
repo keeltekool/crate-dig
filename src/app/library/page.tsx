@@ -22,6 +22,7 @@ export default function LibraryPage() {
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [error, setError] = useState("");
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -133,6 +134,7 @@ export default function LibraryPage() {
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
+      setDragOver(false);
       const file = e.dataTransfer.files[0];
       if (file && file.name.endsWith(".csv")) handleFile(file);
       else setError("Please drop a .csv file");
@@ -143,6 +145,8 @@ export default function LibraryPage() {
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
+    // Reset so same file can be re-selected
+    e.target.value = "";
   };
 
   const filteredSongs = library?.songs.filter(
@@ -176,38 +180,54 @@ export default function LibraryPage() {
           )}
         </h1>
 
-        {/* Upload zone (show when no library or replace mode) */}
-        {!library && (
-          <div
-            onDrop={handleDrop}
-            onDragOver={(e) => e.preventDefault()}
-            onClick={() => fileRef.current?.click()}
-            className="border-2 border-dashed border-vinyl-border hover:border-orange-500/50 py-16 text-center cursor-pointer transition-colors"
-          >
-            <p className="text-neutral-400 font-mono text-sm">
-              Drop your CSV here or click to browse
+        {/* Upload zone — ALWAYS visible */}
+        <div
+          onDrop={handleDrop}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onClick={() => fileRef.current?.click()}
+          className={`border-2 border-dashed py-8 text-center cursor-pointer transition-all mb-6 ${
+            dragOver
+              ? "border-orange-500 bg-orange-500/5"
+              : library
+                ? "border-vinyl-border hover:border-orange-500/50"
+                : "border-vinyl-border hover:border-orange-500/50 py-16"
+          }`}
+        >
+          {uploading ? (
+            <p className="text-orange-500 font-mono text-sm animate-pulse">
+              Parsing CSV...
             </p>
-            <p className="text-neutral-600 font-mono text-xs mt-2">
-              Needs at least Artist + Title columns
-            </p>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv"
-              onChange={handleFileInput}
-              className="hidden"
-            />
-          </div>
-        )}
-
-        {uploading && (
-          <p className="text-orange-500 font-mono text-sm text-center py-8 animate-pulse">
-            Parsing CSV...
-          </p>
-        )}
+          ) : library ? (
+            <>
+              <p className="text-neutral-400 font-mono text-sm">
+                Drop a new CSV to replace your library
+              </p>
+              <p className="text-neutral-600 font-mono text-xs mt-1">
+                Currently: <span className="text-neutral-400">{library.filename}</span> · {library.songCount.toLocaleString()} songs · {library.artistCount.toLocaleString()} artists
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-neutral-400 font-mono text-sm">
+                Drop your CSV here or click to browse
+              </p>
+              <p className="text-neutral-600 font-mono text-xs mt-2">
+                Needs at least Artist + Title columns
+              </p>
+            </>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv"
+            onChange={handleFileInput}
+            className="hidden"
+          />
+        </div>
 
         {error && (
-          <div className="mt-4 p-3 border border-red-500/30 bg-red-500/5 text-red-400 text-xs font-mono">
+          <div className="mb-4 p-3 border border-red-500/30 bg-red-500/5 text-red-400 text-xs font-mono">
             {error}
           </div>
         )}
@@ -215,13 +235,6 @@ export default function LibraryPage() {
         {/* Library view */}
         {library && (
           <div className="space-y-4">
-            {/* Stats */}
-            <div className="flex gap-4 text-xs font-mono text-neutral-500">
-              <span>{library.songCount.toLocaleString()} songs</span>
-              <span>{library.artistCount.toLocaleString()} artists</span>
-              <span>{library.filename}</span>
-            </div>
-
             {/* Genre coverage */}
             {(() => {
               const withGenre = library.songs.filter((s) => s.genre).length;
@@ -262,23 +275,6 @@ export default function LibraryPage() {
                   Showing 200 of {filteredSongs.length} matches
                 </div>
               )}
-            </div>
-
-            {/* Replace CSV */}
-            <div className="text-center pt-2">
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="text-neutral-600 font-mono text-xs hover:text-orange-500 transition-colors"
-              >
-                Replace CSV →
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".csv"
-                onChange={handleFileInput}
-                className="hidden"
-              />
             </div>
           </div>
         )}
