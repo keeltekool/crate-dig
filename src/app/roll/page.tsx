@@ -91,13 +91,7 @@ export default function RollPage() {
         rawFound: data.after_dedup,
       });
 
-      // Filter out tracks already in library
-      const librarySet = new Set(library.map((s) => `${s.artist.toLowerCase()}|${s.title.toLowerCase()}`));
-      const filtered = data.tracks.filter(
-        (t: Track) => !librarySet.has(`${t.artist.toLowerCase()}|${t.title.toLowerCase()}`)
-      );
-
-      setTracks(filtered.slice(0, outputSize));
+      setTracks(data.tracks.slice(0, outputSize));
       setState("preview");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Roll failed");

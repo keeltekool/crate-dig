@@ -211,17 +211,7 @@ related = yt.get_song_related(video_id)
 #   {"videoId": "xxx", "title": "...", "artists": [{"name": "..."}]}
 ```
 
-**Step 3: Filter** — Remove songs already in user's library
-```python
-# Library loaded from Neon (songs JSONB column)
-library_set = {f"{s['artist'].lower()}|{s['title'].lower()}" for s in user_songs}
-filtered = [
-    song for song in related_songs
-    if f"{song['artists'][0]['name'].lower()}|{song['title'].lower()}" not in library_set
-]
-```
-
-**Step 4: Create Playlist** — Push videoIds to YouTube account
+**Step 3: Create Playlist** — Push videoIds to YouTube account
 ```python
 video_ids = [song["videoId"] for song in filtered[:desired_count]]
 playlist_id = yt.create_playlist(
@@ -445,8 +435,7 @@ Full design specs in `design/STYLE-GUIDE.md`. Key structural decisions below.
    → Backend loads YouTube token from DB
    → For each seed: yt.search() → yt.get_watch_playlist(radio=True)
    → Backend deduplicates by videoId
-   → Returns raw tracks to frontend
-   → Frontend filters against user's library (artist+title match)
+   → Returns tracks to frontend
    → Trims to desired count
    → Shows preview
 
