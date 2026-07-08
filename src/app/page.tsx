@@ -1,6 +1,5 @@
 import { VinylRecord } from "@/components/vinyl-record";
 import { Logo } from "@/components/logo";
-import Link from "next/link";
 import { getSession } from "@/lib/session";
 import { redirect } from "next/navigation";
 
@@ -19,12 +18,12 @@ export default async function LandingPage() {
       <header className="sticky top-0 z-50 border-b border-[#1a1a1a] bg-[#0A0A0A]/85 backdrop-blur-sm">
         <div className="mx-auto flex h-14 max-w-[960px] items-center justify-between px-5">
           <Logo compact />
-          <Link
+          <a
             href="/api/youtube/connect"
             className="bg-orange-500 px-4 py-2 font-display text-[15px] tracking-[2px] text-black transition-colors hover:bg-orange-400"
           >
             CONNECT
-          </Link>
+          </a>
         </div>
       </header>
 
@@ -41,12 +40,12 @@ export default async function LandingPage() {
             you&apos;ve never heard — seeded by the songs you already love.
           </p>
           <div className="mt-9 flex flex-col items-center gap-4">
-            <Link
+            <a
               href="/api/youtube/connect"
               className="bg-orange-500 px-10 py-4 font-display text-xl tracking-[4px] text-black transition-all hover:bg-orange-400 hover:shadow-[0_0_40px_rgba(249,115,22,0.25)]"
             >
               CONNECT YOUTUBE
-            </Link>
+            </a>
             <p className="font-mono text-xs text-[#555]">
               Sign in with Google · Powered by YouTube Music
             </p>
@@ -131,12 +130,12 @@ export default async function LandingPage() {
           <h2 className="mt-8 font-display text-[52px] leading-none tracking-[4px] text-white sm:text-[64px]">
             READY TO <span className="text-orange-500">DIG?</span>
           </h2>
-          <Link
+          <a
             href="/api/youtube/connect"
             className="mt-8 bg-orange-500 px-10 py-4 font-display text-xl tracking-[4px] text-black transition-all hover:bg-orange-400 hover:shadow-[0_0_40px_rgba(249,115,22,0.25)]"
           >
             CONNECT YOUTUBE
-          </Link>
+          </a>
         </div>
       </section>
 
